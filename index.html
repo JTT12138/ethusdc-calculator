@@ -1,0 +1,269 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#0b0b0c">
+<title>ETHUSDC 净风险计算器</title>
+<link rel="manifest" href="manifest.webmanifest">
+<style>
+:root{color-scheme:light dark;--bg:#f5f5f7;--card:#fff;--text:#111;--muted:#6b7280;--line:#d1d5db;--accent:#2563eb;--ok:#067647;--bad:#b42318;--chip:#eef2ff}
+@media(prefers-color-scheme:dark){:root{--bg:#0b0b0c;--card:#171719;--text:#f5f5f5;--muted:#9ca3af;--line:#34343a;--accent:#60a5fa;--ok:#6ce9a6;--bad:#f97066;--chip:#1f2937}}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--text);font-family:-apple-system,BlinkMacSystemFont,"SF Pro Text","PingFang SC","Helvetica Neue",Arial,sans-serif}
+main{max-width:680px;margin:0 auto;padding:14px 14px 28px}
+h1{font-size:22px;margin:4px 0 4px}.sub{color:var(--muted);font-size:13px;margin-bottom:14px;line-height:1.5}
+.card{background:var(--card);border:1px solid var(--line);border-radius:16px;padding:14px;margin:10px 0}
+.grid{display:grid;grid-template-columns:1fr 1fr;gap:10px}.full{grid-column:1/-1}
+label{font-size:12px;color:var(--muted);display:block;margin:0 0 6px}
+input,select,button{font:inherit;font-size:16px;min-height:46px;border-radius:12px}
+input,select{width:100%;border:1px solid var(--line);background:transparent;color:var(--text);padding:10px 12px}
+.segment{display:grid;grid-template-columns:repeat(4,1fr);gap:7px}
+.segment button{border:1px solid var(--line);background:transparent;color:var(--text);padding:7px 5px;font-size:13px}
+.segment button.active{border-color:var(--accent);background:var(--chip);color:var(--accent);font-weight:700}
+.two{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.primary{width:100%;border:0;background:var(--accent);color:white;font-weight:700;padding:10px 14px}
+.secondary{width:100%;border:1px solid var(--line);background:transparent;color:var(--text);padding:10px 14px}
+.result-main{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.metric{padding:12px;border:1px solid var(--line);border-radius:14px;min-width:0}
+.metric .k{font-size:12px;color:var(--muted)}.metric .v{font-size:22px;font-weight:750;margin-top:4px;overflow-wrap:anywhere}.metric .u{font-size:12px;color:var(--muted)}
+.breakdown{width:100%;border-collapse:collapse;font-size:14px}.breakdown td{padding:9px 2px;border-bottom:1px solid var(--line)}.breakdown td:last-child{text-align:right;font-variant-numeric:tabular-nums}
+.status{font-size:13px;padding:10px 12px;border-radius:12px;background:var(--chip);line-height:1.45}.status.ok{color:var(--ok)}.status.bad{color:var(--bad)}
+.hint{font-size:12px;color:var(--muted);line-height:1.55;margin-top:8px}
+details summary{cursor:pointer;color:var(--muted);font-size:13px}
+@media(max-width:430px){.grid,.two,.result-main{grid-template-columns:1fr}.segment{grid-template-columns:1fr 1fr}}
+</style>
+</head>
+<body>
+<main id="app">
+  <h1>ETHUSDC 净风险计算器</h1>
+  <div class="sub">Entry / TP 手续费 0%；Stop Taker 手续费 0.04%。默认净风险 3 USDC、净目标 2R。</div>
+
+  <section class="card">
+    <div class="grid">
+      <div>
+        <label for="dir">方向</label>
+        <select id="dir"><option value="LONG">LONG</option><option value="SHORT">SHORT</option></select>
+      </div>
+      <div>
+        <label for="risk">净风险 USDC</label>
+        <input id="risk" inputmode="decimal" type="number" step="0.1" value="3">
+      </div>
+      <div>
+        <label for="high">区间高点</label>
+        <input id="high" inputmode="decimal" type="number" step="0.01" placeholder="例如 2500">
+      </div>
+      <div>
+        <label for="low">区间低点</label>
+        <input id="low" inputmode="decimal" type="number" step="0.01" placeholder="例如 2470">
+      </div>
+      <div class="full">
+        <label>入场方式</label>
+        <div class="segment" id="entryModes">
+          <button type="button" data-mode="HIGH_THIRD">高 1/3</button>
+          <button type="button" data-mode="MID">1/2</button>
+          <button type="button" data-mode="LOW_THIRD">低 1/3</button>
+          <button type="button" data-mode="FIXED">固定价</button>
+        </div>
+      </div>
+      <div id="fixedWrap" style="display:none">
+        <label for="fixedEntry">固定入场价</label>
+        <input id="fixedEntry" inputmode="decimal" type="number" step="0.01" placeholder="输入固定价格">
+      </div>
+      <div>
+        <label for="stopMode">止损来源</label>
+        <select id="stopMode">
+          <option value="MANUAL">手动止损</option>
+          <option value="RANGE_EDGE">区间边界（LONG=低点 / SHORT=高点）</option>
+        </select>
+      </div>
+      <div id="manualStopWrap">
+        <label for="stop">Structural Stop</label>
+        <input id="stop" inputmode="decimal" type="number" step="0.01" placeholder="输入结构止损">
+      </div>
+      <div>
+        <label for="rr">净目标 R</label>
+        <input id="rr" inputmode="decimal" type="number" step="0.1" value="2">
+      </div>
+    </div>
+  </section>
+
+  <section class="card">
+    <div class="result-main">
+      <div class="metric"><div class="k">入场价 Entry</div><div class="v" id="rEntry">—</div></div>
+      <div class="metric"><div class="k">最终数量 Qty</div><div class="v" id="rQty">—</div></div>
+      <div class="metric"><div class="k">Structural Stop</div><div class="v" id="rStop">—</div></div>
+      <div class="metric"><div class="k">净目标 TP</div><div class="v" id="rTp">—</div></div>
+    </div>
+    <div id="status" class="status" style="margin-top:10px">输入高点、低点和止损后自动计算。</div>
+  </section>
+
+  <section class="card">
+    <table class="breakdown">
+      <tr><td>高 1/3</td><td id="bHighThird">—</td></tr>
+      <tr><td>1/2</td><td id="bMid">—</td></tr>
+      <tr><td>低 1/3</td><td id="bLowThird">—</td></tr>
+      <tr><td>预计 Stop Fill</td><td id="bStopFill">—</td></tr>
+      <tr><td>结构价格亏损</td><td id="bStructural">—</td></tr>
+      <tr><td>滑点亏损</td><td id="bSlipLoss">—</td></tr>
+      <tr><td>Stop 0.04% 手续费</td><td id="bStopFee">—</td></tr>
+      <tr><td>预计净止损</td><td id="bNetStop">—</td></tr>
+      <tr><td>预计净止盈</td><td id="bNetTp">—</td></tr>
+    </table>
+  </section>
+
+  <section class="card">
+    <details>
+      <summary>高级参数（与网页版扩展对齐）</summary>
+      <div class="grid" style="margin-top:12px">
+        <div><label for="slip">Stop Slippage bps</label><input id="slip" inputmode="decimal" type="number" step="0.000001" value="8.725691"></div>
+        <div><label for="qtyStep">Qty Step</label><input id="qtyStep" inputmode="decimal" type="number" step="0.001" value="0.001"></div>
+        <div><label for="tick">Price Tick</label><input id="tick" inputmode="decimal" type="number" step="0.01" value="0.01"></div>
+      </div>
+      <div class="hint">如果你只想按“结构止损 + 0.04% Stop 手续费”计算，把 Slippage 设为 0。默认 8.725691 bps 是当前网页版 v0.15.0 使用的旧 P75 fallback。</div>
+    </details>
+  </section>
+
+  <section class="card">
+    <div class="hint"><b>区间公式：</b>高 1/3 = Low + 2/3 × (High−Low)；1/2 = Low + 1/2 × Range；低 1/3 = Low + 1/3 × Range。</div>
+    <div class="hint"><b>下单：</b>这个工具只负责计算，不提交 Binance 订单。手机 TradingView 里把 Entry、Qty、Structural Stop、TP 抄到订单票据即可。</div>
+  </section>
+</main>
+
+<script>
+(() => {
+  const root = document.getElementById('app');
+  if (root.dataset.ready) return;
+  root.dataset.ready = '1';
+
+  const $ = id => document.getElementById(id);
+  const els = {
+    dir:$('dir'), risk:$('risk'), high:$('high'), low:$('low'), fixedEntry:$('fixedEntry'),
+    fixedWrap:$('fixedWrap'), stopMode:$('stopMode'), stop:$('stop'), manualStopWrap:$('manualStopWrap'),
+    rr:$('rr'), slip:$('slip'), qtyStep:$('qtyStep'), tick:$('tick'),
+    rEntry:$('rEntry'), rQty:$('rQty'), rStop:$('rStop'), rTp:$('rTp'), status:$('status'),
+    bHighThird:$('bHighThird'), bMid:$('bMid'), bLowThird:$('bLowThird'), bStopFill:$('bStopFill'),
+    bStructural:$('bStructural'), bSlipLoss:$('bSlipLoss'), bStopFee:$('bStopFee'), bNetStop:$('bNetStop'), bNetTp:$('bNetTp')
+  };
+
+  let mode = 'MID';
+  const modeButtons = [...document.querySelectorAll('#entryModes button')];
+  modeButtons.forEach(btn => btn.addEventListener('click', () => {
+    mode = btn.dataset.mode;
+    modeButtons.forEach(b => b.classList.toggle('active', b === btn));
+    els.fixedWrap.style.display = mode === 'FIXED' ? '' : 'none';
+    calc();
+  }));
+  modeButtons[1].classList.add('active');
+
+  els.stopMode.addEventListener('change', () => {
+    els.manualStopWrap.style.display = els.stopMode.value === 'MANUAL' ? '' : 'none';
+    calc();
+  });
+
+  const num = el => {
+    const v = Number(el.value);
+    return Number.isFinite(v) ? v : NaN;
+  };
+  const floorStep = (v,s) => Math.floor((v + 1e-12)/s)*s;
+  const ceilStep = (v,s) => Math.ceil((v - 1e-12)/s)*s;
+  const f = (v,d=8) => Number.isFinite(v) ? Number(v.toFixed(d)).toString() : '—';
+  const money = v => Number.isFinite(v) ? f(v,6) + ' USDC' : '—';
+
+  function calc(){
+    const high=num(els.high), low=num(els.low), risk=num(els.risk), rr=num(els.rr);
+    const slipBps=num(els.slip), qtyStep=num(els.qtyStep), tick=num(els.tick);
+    const isLong=els.dir.value==='LONG';
+
+    const range = high-low;
+    const highThird = Number.isFinite(range) && range>0 ? low + range*2/3 : NaN;
+    const mid = Number.isFinite(range) && range>0 ? low + range/2 : NaN;
+    const lowThird = Number.isFinite(range) && range>0 ? low + range/3 : NaN;
+
+    els.bHighThird.textContent=f(highThird,8);
+    els.bMid.textContent=f(mid,8);
+    els.bLowThird.textContent=f(lowThird,8);
+
+    let entry = mode==='HIGH_THIRD' ? highThird :
+                mode==='MID' ? mid :
+                mode==='LOW_THIRD' ? lowThird : num(els.fixedEntry);
+
+    let stop = els.stopMode.value==='RANGE_EDGE'
+      ? (isLong ? low : high)
+      : num(els.stop);
+
+    const baseValid = Number.isFinite(entry)&&Number.isFinite(stop)&&Number.isFinite(risk)&&Number.isFinite(rr)&&
+      Number.isFinite(slipBps)&&Number.isFinite(qtyStep)&&Number.isFinite(tick)&&risk>0&&rr>0&&slipBps>=0&&qtyStep>0&&tick>0;
+
+    const geometryValid = baseValid && (isLong ? stop<entry : stop>entry);
+
+    let expectedStopFill=NaN, structuralLoss=NaN, slipLoss=NaN, stopFee=NaN, netStop=NaN, qty=NaN, tp=NaN, netTp=NaN;
+
+    if (geometryValid){
+      const slip=slipBps/10000;
+      expectedStopFill = isLong ? stop*(1-slip) : stop*(1+slip);
+
+      const structuralPerUnit=Math.abs(entry-stop);
+      const slipPerUnit=Math.abs(expectedStopFill-stop);
+      const stopFeePerUnit=expectedStopFill*0.0004;
+      const unitLoss=structuralPerUnit+slipPerUnit+stopFeePerUnit;
+
+      const qtyRaw=risk/unitLoss;
+      qty=floorStep(qtyRaw,qtyStep);
+
+      if(qty>0){
+        structuralLoss=qty*structuralPerUnit;
+        slipLoss=qty*slipPerUnit;
+        stopFee=qty*stopFeePerUnit;
+        netStop=structuralLoss+slipLoss+stopFee;
+
+        const targetNet=risk*rr;
+        const rawTp=isLong ? entry+targetNet/qty : entry-targetNet/qty;
+        tp=isLong ? ceilStep(rawTp,tick) : floorStep(rawTp,tick);
+        netTp=qty*Math.abs(tp-entry);
+      }
+    }
+
+    els.rEntry.textContent=f(entry,8);
+    els.rStop.textContent=f(stop,8);
+    els.rQty.textContent=f(qty,8);
+    els.rTp.textContent=f(tp,8);
+
+    els.bStopFill.textContent=f(expectedStopFill,8);
+    els.bStructural.textContent=Number.isFinite(structuralLoss)?'-'+money(structuralLoss):'—';
+    els.bSlipLoss.textContent=Number.isFinite(slipLoss)?'-'+money(slipLoss):'—';
+    els.bStopFee.textContent=Number.isFinite(stopFee)?'-'+money(stopFee):'—';
+    els.bNetStop.textContent=Number.isFinite(netStop)?'-'+money(netStop):'—';
+    els.bNetTp.textContent=Number.isFinite(netTp)?'+'+money(netTp):'—';
+
+    if(!Number.isFinite(high)||!Number.isFinite(low)||!(high>low)){
+      els.status.className='status bad';
+      els.status.textContent='请输入有效高点和低点，并满足 High > Low。';
+    }else if(!geometryValid){
+      els.status.className='status bad';
+      els.status.textContent=isLong?'LONG 必须满足 Stop < Entry。':'SHORT 必须满足 Stop > Entry。';
+    }else if(!(qty>0)){
+      els.status.className='status bad';
+      els.status.textContent='按当前风险参数计算出的数量小于最小 Qty Step。';
+    }else{
+      const target=risk*rr;
+      const stopOk=netStop<=risk+1e-8;
+      const tpOk=netTp+1e-8>=target;
+      els.status.className='status '+(stopOk&&tpOk?'ok':'bad');
+      els.status.textContent=`READY｜预计净止损 ${f(netStop,6)} USDC｜预计净止盈 ${f(netTp,6)} USDC｜目标 +${f(target,6)} USDC`;
+    }
+  }
+
+  ['input','change'].forEach(ev => root.addEventListener(ev, e => {
+    if(e.target.matches('input,select')) calc();
+  }));
+  els.dir.addEventListener('change', calc);
+  calc();
+
+  if('serviceWorker' in navigator && location.protocol.startsWith('http')){
+    navigator.serviceWorker.register('./sw.js').catch(()=>{});
+  }
+})();
+</script>
+</body>
+</html>
